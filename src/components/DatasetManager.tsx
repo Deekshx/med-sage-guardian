@@ -25,6 +25,8 @@ interface DrugInteractionData {
   recommendation: string;
   mechanism?: string;
   evidence_level?: string;
+  allergic_reactions?: string[];
+  contraindications?: string[];
 }
 
 interface Dataset {
@@ -72,15 +74,17 @@ export default function DatasetManager({ onDatasetChange }: DatasetManagerProps)
             obj[header] = values[index] || '';
           });
           
-          return {
-            drug1: obj.drug1 || obj['drug 1'] || obj.drugname1 || '',
-            drug2: obj.drug2 || obj['drug 2'] || obj.drugname2 || '',
-            severity: (obj.severity || 'mild').toLowerCase() as any,
-            description: obj.description || obj.interaction || '',
-            recommendation: obj.recommendation || obj.advice || '',
-            mechanism: obj.mechanism || '',
-            evidence_level: obj.evidence_level || obj['evidence level'] || ''
-          };
+            return {
+              drug1: obj.drug1 || obj['drug 1'] || obj.drugname1 || '',
+              drug2: obj.drug2 || obj['drug 2'] || obj.drugname2 || '',
+              severity: (obj.severity || 'mild').toLowerCase() as any,
+              description: obj.description || obj.interaction || '',
+              recommendation: obj.recommendation || obj.advice || '',
+              mechanism: obj.mechanism || '',
+              evidence_level: obj.evidence_level || obj['evidence level'] || '',
+              allergic_reactions: obj.allergic_reactions ? obj.allergic_reactions.split(';') : [],
+              contraindications: obj.contraindications ? obj.contraindications.split(';') : []
+            };
         });
       }
 
@@ -216,7 +220,7 @@ export default function DatasetManager({ onDatasetChange }: DatasetManagerProps)
             <Alert>
               <FileText className="h-4 w-4" />
               <AlertDescription>
-                <strong>Expected format:</strong> CSV or JSON with columns: drug1, drug2, severity (severe/moderate/mild/safe), description, recommendation (optional)
+                <strong>Expected format:</strong> CSV or JSON with columns: drug1, drug2, severity (severe/moderate/mild/safe), description, recommendation (optional), allergic_reactions (optional, semicolon separated), contraindications (optional, semicolon separated)
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -320,6 +324,16 @@ export default function DatasetManager({ onDatasetChange }: DatasetManagerProps)
                       {item.recommendation && (
                         <p className="text-sm text-primary mt-1">
                           <strong>Rec:</strong> {item.recommendation}
+                        </p>
+                      )}
+                      {item.allergic_reactions && item.allergic_reactions.length > 0 && (
+                        <p className="text-sm text-warning mt-1">
+                          <strong>Allergic Reactions:</strong> {item.allergic_reactions.join(', ')}
+                        </p>
+                      )}
+                      {item.contraindications && item.contraindications.length > 0 && (
+                        <p className="text-sm text-destructive mt-1">
+                          <strong>Contraindications:</strong> {item.contraindications.join(', ')}
                         </p>
                       )}
                     </div>

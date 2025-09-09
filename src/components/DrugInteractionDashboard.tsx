@@ -35,12 +35,22 @@ interface DrugInteractionData {
   recommendation: string;
   mechanism?: string;
   evidence_level?: string;
+  allergic_reactions?: string[];
+  contraindications?: string[];
 }
 
 interface InteractionResult {
   severity: 'severe' | 'moderate' | 'mild' | 'safe';
   drugs: string[];
   description: string;
+  recommendation: string;
+}
+
+interface AllergyAlert {
+  drug: string;
+  allergen: string;
+  severity: 'severe' | 'moderate' | 'mild';
+  symptoms: string;
   recommendation: string;
 }
 
@@ -67,9 +77,11 @@ const mockAlternatives = [
 export default function DrugInteractionDashboard() {
   const [drugs, setDrugs] = useState<DrugEntry[]>([]);
   const [patientAge, setPatientAge] = useState<string>('');
+  const [patientAllergies, setPatientAllergies] = useState<string>('');
   const [currentDrug, setCurrentDrug] = useState({ name: '', dosage: '', frequency: '' });
   const [analyzing, setAnalyzing] = useState(false);
   const [results, setResults] = useState<InteractionResult[]>([]);
+  const [allergyAlerts, setAllergyAlerts] = useState<AllergyAlert[]>([]);
   const [activeDataset, setActiveDataset] = useState<DrugInteractionData[] | null>(null);
 
   const addDrug = () => {
@@ -87,11 +99,63 @@ export default function DrugInteractionDashboard() {
     setDrugs(drugs.filter(drug => drug.id !== id));
   };
 
+  const checkAllergies = (drugs: DrugEntry[], allergies: string[]): AllergyAlert[] => {
+    const alerts: AllergyAlert[] = [];
+    const commonAllergicReactions: Record<string, { allergens: string[], symptoms: string, severity: 'severe' | 'moderate' | 'mild' }> = {
+      'penicillin': { allergens: ['penicillin', 'amoxicillin', 'ampicillin'], symptoms: 'Rash, hives, swelling, difficulty breathing', severity: 'severe' },
+      'sulfa': { allergens: ['sulfamethoxazole', 'trimethoprim', 'sulfasalazine'], symptoms: 'Skin rash, fever, nausea', severity: 'moderate' },
+      'aspirin': { allergens: ['aspirin', 'acetylsalicylic acid'], symptoms: 'Breathing problems, hives, stomach upset', severity: 'moderate' },
+      'iodine': { allergens: ['iodine', 'contrast dye'], symptoms: 'Skin reactions, breathing difficulties', severity: 'severe' },
+      'latex': { allergens: ['latex'], symptoms: 'Skin irritation, respiratory symptoms', severity: 'mild' }
+    };
+
+    drugs.forEach(drug => {
+      allergies.forEach(allergy => {
+        const allergyLower = allergy.toLowerCase().trim();
+        const drugLower = drug.name.toLowerCase();
+        
+        // Direct match
+        if (drugLower.includes(allergyLower) || allergyLower.includes(drugLower)) {
+          alerts.push({
+            drug: drug.name,
+            allergen: allergy,
+            severity: 'severe',
+            symptoms: 'Allergic reaction possible',
+            recommendation: `AVOID ${drug.name} - Patient is allergic to ${allergy}`
+          });
+        }
+        
+        // Check against common allergic reactions
+        Object.entries(commonAllergicReactions).forEach(([allergen, info]) => {
+          if (allergyLower.includes(allergen) && 
+              info.allergens.some(a => drugLower.includes(a))) {
+            alerts.push({
+              drug: drug.name,
+              allergen: allergy,
+              severity: info.severity,
+              symptoms: info.symptoms,
+              recommendation: `CONTRAINDICATED - ${drug.name} contains ${allergen} which patient is allergic to`
+            });
+          }
+        });
+      });
+    });
+
+    return alerts;
+  };
+
   const analyzeInteractions = async () => {
     setAnalyzing(true);
     
     setTimeout(() => {
       let foundInteractions: InteractionResult[] = [];
+      let foundAllergies: AllergyAlert[] = [];
+      
+      // Check allergies if patient has any listed
+      if (patientAllergies.trim()) {
+        const allergiesList = patientAllergies.split(',').map(a => a.trim()).filter(a => a);
+        foundAllergies = checkAllergies(drugs, allergiesList);
+      }
       
       if (activeDataset && activeDataset.length > 0) {
         // Use uploaded dataset for analysis
@@ -123,6 +187,7 @@ export default function DrugInteractionDashboard() {
       }
       
       setResults(foundInteractions);
+      setAllergyAlerts(foundAllergies);
       setAnalyzing(false);
     }, 2000);
   };
@@ -202,6 +267,23 @@ export default function DrugInteractionDashboard() {
                           className="pl-10"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="allergies">Known Allergies</Label>
+                      <div className="relative mt-2">
+                        <AlertTriangle className="absolute left-3 top-3 h-4 w-4 text-warning" />
+                        <Input
+                          id="allergies"
+                          placeholder="e.g., Penicillin, Sulfa, Aspirin (comma separated)"
+                          value={patientAllergies}
+                          onChange={(e) => setPatientAllergies(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enter known allergies separated by commas
+                      </p>
                     </div>
 
                     <Separator />
@@ -288,7 +370,7 @@ export default function DrugInteractionDashboard() {
 
               {/* Results Panel */}
               <div className="lg:col-span-2">
-                {results.length === 0 ? (
+                {results.length === 0 && allergyAlerts.length === 0 ? (
                   <Card className="shadow-card">
                     <CardContent className="flex flex-col items-center justify-center py-12">
                       <div className="flex items-center justify-center w-16 h-16 bg-primary/10 rounded-full mb-4">
@@ -296,20 +378,57 @@ export default function DrugInteractionDashboard() {
                       </div>
                       <h3 className="text-lg font-semibold text-foreground mb-2">Ready to Analyze</h3>
                       <p className="text-muted-foreground text-center">
-                        Add at least 2 medications to check for potential interactions
+                        Add medications to check for interactions and allergies
                       </p>
                     </CardContent>
                   </Card>
                 ) : (
                   <div className="space-y-6">
+                    {/* Allergy Alerts - Show first with highest priority */}
+                    {allergyAlerts.length > 0 && (
+                      <Card className="shadow-alert border-destructive/20">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-destructive">
+                            <AlertTriangle className="h-5 w-5" />
+                            ⚠️ ALLERGY ALERTS
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {allergyAlerts.map((alert, index) => (
+                            <Alert key={index} className="border-destructive/30 bg-destructive/5">
+                              <div className="flex items-start gap-3">
+                                <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
+                                <div className="flex-1">
+                                  <AlertTitle className="flex items-center gap-2 mb-2 text-destructive">
+                                    <Badge className="bg-destructive text-white">
+                                      {alert.severity.toUpperCase()} ALLERGY
+                                    </Badge>
+                                    <span className="font-bold">{alert.drug}</span>
+                                  </AlertTitle>
+                                  <AlertDescription className="space-y-2">
+                                    <p><strong>Allergen:</strong> {alert.allergen}</p>
+                                    <p><strong>Potential Symptoms:</strong> {alert.symptoms}</p>
+                                    <div className="p-3 bg-destructive/10 rounded-lg border-l-4 border-l-destructive">
+                                      <p className="text-sm font-bold text-destructive">URGENT:</p>
+                                      <p className="text-sm text-foreground">{alert.recommendation}</p>
+                                    </div>
+                                  </AlertDescription>
+                                </div>
+                              </div>
+                            </Alert>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    )}
                     {/* Interaction Results */}
-                    <Card className="shadow-card">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <AlertTriangle className="h-5 w-5 text-warning" />
-                          Drug Interaction Analysis
-                        </CardTitle>
-                      </CardHeader>
+                    {results.length > 0 && (
+                      <Card className="shadow-card">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <AlertTriangle className="h-5 w-5 text-warning" />
+                            Drug Interaction Analysis
+                          </CardTitle>
+                        </CardHeader>
                       <CardContent className="space-y-4">
                         {results.map((result, index) => (
                           <Alert key={index} className="shadow-alert">
@@ -335,6 +454,7 @@ export default function DrugInteractionDashboard() {
                         ))}
                       </CardContent>
                     </Card>
+                    )}
 
                     {/* Alternative Medications */}
                     <Card className="shadow-card">
